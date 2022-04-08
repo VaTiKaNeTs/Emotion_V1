@@ -33,6 +33,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define VCC 3.3
+#define angle 0.83
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,7 +51,10 @@ TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN PV */
-
+uint8_t encoder_a_ukaz_status; //записывается состояние пина енкодера указательного пальца (0 или 1)
+uint8_t encoder_b_ukaz_status; //записывается состояние пина енкодера указательного пальца (0 или 1)
+uint8_t bin_encoder_ukaz_counter; //вычисляется сумма состояний пинов енкодера указательного пальца
+uint8_t encoder_ukaz_flag; //поднимается, когда на энкодере было изменение фронта и теперь надо пересчитать углы
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,7 +67,9 @@ static void MX_TIM4_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_ADC2_Init(void);
 /* USER CODE BEGIN PFP */
-
+void EncoderReadOut(uint16_t ENCODER_A, uint16_t ENCODER_B, uint8_t encoder_a_status, uint8_t encoder_b_status,
+		uint8_t old_encoder_a_status, uint8_t old_encoder_b_status, uint8_t bin_encoder_counter, uint8_t bin_encoder_counter_old, float encoder_angle); //функция для считывания состояние пинов енкодера
+void EncoderProcessing(void); //функция для перерасчета углов по данным с енкодеров
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -572,6 +578,83 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+void EncoderReadOut(uint16_t ENCODER_A, uint16_t ENCODER_B, uint8_t encoder_a_status, uint8_t encoder_b_status,
+		uint8_t old_encoder_a_status, uint8_t old_encoder_b_status, uint8_t bin_encoder_counter, uint8_t bin_encoder_counter_old, float encoder_angle){
+	GPIO_TypeDef * ENCODER_A_PORT = GPIOB; //объявили переменные портов для использовании в функции
+	GPIO_TypeDef * ENCODER_B_PORT = GPIOB;
+	if(ENCODER_B == ENCODER_B_SRED_Pin){ //меняем значения портов для данного пина, т.к. он единственный на порте A
+		ENCODER_B_PORT = GPIOA;
+	}
+	if(ENCODER_A == ENCODER_A_BF_Pin){ //меняем значения портов для данного пина, т.к. они единственные на порте A
+		ENCODER_A_PORT = GPIOA;
+		ENCODER_B_PORT = GPIOA;
+	}
+
+	if(HAL_GPIO_ReadPin(ENCODER_A_PORT, ENCODER_A) == GPIO_PIN_SET ) //проверяем находится ли пин в высоком состоянии
+		encoder_a_status = 1;// на выводе ENCODER_A высокий уровень
+	else
+		encoder_a_status = 0;// на выводе ENCODER_A низкий уровень
+
+	if(HAL_GPIO_ReadPin(ENCODER_B_PORT, ENCODER_B) == GPIO_PIN_SET ) //проверяем находится ли пин в высоком состоянии
+		encoder_b_status = 1;// на выводе ENCODER_B высокий уровень
+	else
+		encoder_b_status = 0;// на выводе ENCODER_B низкий уровень
+
+	if(old_encoder_a_status != encoder_a_status || old_encoder_b_status != encoder_b_status){
+		//пересчитываем состояния енкодеров в числа, для последущих расчетов
+		if(encoder_a_status == 0 && encoder_b_status == 0)
+			bin_encoder_counter = 0;
+		if(encoder_a_status == 0 && encoder_b_status == 1)
+			bin_encoder_counter = 1;
+		if(encoder_a_status == 1 && encoder_b_status == 0)
+			bin_encoder_counter = 2;
+		if(encoder_a_status == 1 && encoder_b_status == 1)
+			bin_encoder_counter = 3;
+
+		switch(bin_encoder_counter){ //сравниваем новое значение со старыми, и выясняем в какую сторону вращается палец
+			case 0: {
+				if(bin_encoder_counter_old == 1) encoder_angle += angle; //прибавляем угол 0,83
+				if(bin_encoder_counter_old == 2) encoder_angle -= angle; //отнимаем угол 0,83
+				break;
+			}
+			case 1: {
+				if(bin_encoder_counter_old == 3) encoder_angle += angle;
+				if(bin_encoder_counter_old == 0) encoder_angle -= angle;
+				break;
+			}
+			case 2: {
+				if(bin_encoder_counter_old == 0) encoder_angle += angle;
+				if(bin_encoder_counter_old == 3) encoder_angle -= angle;
+				break;
+			}
+			case 3: {
+				if(bin_encoder_counter_old == 2) encoder_angle += angle;
+				if(bin_encoder_counter_old == 1) encoder_angle -= angle;
+				break;
+			}
+		}
+	}
+	/*----------------------------------------*/
+	/*Функция предназначена для считывания состояний пинов подключенных к енкодеру одного из пальцев.
+	 * Замеяем по необходимости названия портов в начале, затем считываем состояния пинов и
+	 * если хоть один из статусов изменился, производим перерасчеты.
+	 * переводим состояния енкодеров в числовой вид и сравниваем текущее значение с прошлым,
+	 * делаем выводы и записываем новые значения угла поворота*/
+}
+
+/*switch(encoder_a_status){
+case 0:
+	switch(encoder_b_status){
+	case 0: bin_encoder_counter = 0; break;
+	case 1: bin_encoder_counter = 1; break;
+	}
+case 1:
+	switch(encoder_b_status){
+	case 0: bin_encoder_counter = 2; break;
+	case 1: bin_encoder_counter = 3; break;
+	}
+}*/
 
 /* USER CODE END 4 */
 
